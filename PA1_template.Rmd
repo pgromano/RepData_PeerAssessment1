@@ -1,0 +1,153 @@
+---
+title: "Course Project"
+author: "Pablo Romano"
+date: "10/6/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Loading and preprocessing the data
+
+1. Load the data (i.e. `read.csv()`).
+
+```{r, echo=TRUE, cache=TRUE}
+Data <- read.csv('Data/activity.csv')
+```
+
+2. Process/transform the data (if necessary) into a format suitable for your analysis.
+
+```{r, echo=TRUE, cache=TRUE}
+Data$date <- as.Date(Data$date, format="%Y-%m-%d")
+names(Data) <- c("Steps", "Dates", "Interval")
+```
+
+### What is mean total number of steps taken per day?
+
+1. Calculate the total number of steps take per day.
+
+```{r, echo=TRUE, cache=TRUE}
+total.steps <- unname(tapply(Data$Steps, Data$Date, sum, na.rm=TRUE))
+```
+
+2. Make a histogram of the total number of steps taken each day. 
+
+```{r, echo=TRUE, cache=TRUE}
+hist(total.steps, breaks=length(total.steps), xlab='Total Number of Daily Steps', ylab='Frequency', main='Histogram of Total Daily Steps')
+rug(total.steps)
+```
+
+3. Calculate and report the mean and median of the total number of steps taken per day.
+
+```{r, echo=TRUE, cache=TRUE}
+total.mean <- mean(total.steps)
+total.median <- median(total.steps)
+print(c("Mean: ", total.mean))
+print(c("Median: ", total.median))
+```
+
+### What is the average daily activity pattern?
+
+1. Make a time series plot (i.e. `type="l"`) of the 5-minute interval and the average number of steps taken, averaged across all days.
+
+```{r, echo=TRUE, cache=TRUE}
+Steps.perInterval <- sapply(split(Data$Steps, Data$Interval), mean, na.rm=TRUE)
+
+plot(unique(Data$Interval), Steps.perInterval, type='l', xlab='5 Minute Interval', ylab='Average Interval Steps')
+```
+
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r, echo=TRUE, cache=TRUE}
+print(c("Max Steps per 5-minute Interval: ", names(which.max(Steps.perInterval))))
+```
+
+### Imputing missing values
+
+1. Calculate and report the total number of missing values in the dataset.
+
+```{r, echo=TRUE, cache=TRUE}
+print(c("Total Missing: ", sum(is.na(Data$steps))))
+print(c("Percent Missing: ", mean(is.na(Data$steps))))
+```
+
+2. Devise a strategy for filing in all the missing values in the dataset. The strategy does not need to be sophisticated. For example, you coulse use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+Looking through the data, the only missing values (shown as `NA`) are given in the `steps` column. As this is a numeric type, we can estimate what the true value should be. To accomplish this we're going to use the `mice` or **M**ultivariate **I**mputation by **C**hained **E**quations in R. This method is designed for imputing missing values along multiple dimensions, but we'll just set it up to impute a single column. 
+
+If you're missing the package you can simply install through the CRAN repository.
+```
+install.packages('mice')
+```
+
+Once installed, let's load the package and evaluate our `Data`.
+
+```{r, echo=TRUE, cache=TRUE}
+library(mice)
+md.pattern(Data)
+```
+
+As we predicted, only our `steps` column is missing values (2304 to be exact). Let's create a new `data.frame` that only contains the step values, and since the `mice` method is multivariate lets add an arbitrary index column.
+
+```{r, echo=TRUE, cache=TRUE}
+missing <- data.frame(Index=1:length(Data$Steps), Steps=Data$Steps)
+```
+
+There are several methods within `mice`, but we'll use the default *predictive mean matching* method or `pmm`. 
+
+```{r, echo=TRUE, cache=TRUE}
+mice.filler <- mice(missing, m=5, meth='pmm')
+```
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r, echo=TRUE, cache=TRUE}
+fData <- Data
+fData$Steps[is.na(Data$Steps)] <- mice.filler$imp$Steps[,5]
+```
+
+The `mice.filler` R object contains the value `imp` which stores all the imputed columns within the new dataset `fData`. 
+
+4. Make a histogram of the total number of steps taken each day and calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+```{r, echo=TRUE, cache=TRUE}
+ftotal.steps <- unname(tapply(fData$Steps, fData$Date, sum, na.rm=TRUE))
+
+hist(ftotal.steps, breaks=length(ftotal.steps), xlab='Total Number of Daily Steps', ylab='Frequency', main='Histogram of Total Daily Steps')
+rug(ftotal.steps)
+```
+Let's compare the effect of imputing on the mean and median values of the dataset.
+
+```{r, echo=TRUE, cache=TRUE}
+print(c('Imputed', 'Non-Imputed'))
+print(c(mean(ftotal.steps), mean(total.steps)))
+print(c(median(ftotal.steps), median(total.steps)))
+```
+
+While the effect on the median is minimal (which statistically we would expect), there is a larger effect on the mean value with roughly a 6% increase.
+
+### Are there differences in activity patterns between weekdays and weekends?
+
+1. Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+```{r, echo=TRUE, cache=TRUE}
+fData$Days <- weekdays(fData$Date)
+fData$DayType <- factor(fData$Days == "Saturday" | fData$Days == "Sunday", levels = c(FALSE, TRUE), labels = c("Weekday", "Weekend"))
+```
+
+2. Make a panel plot containing a time series plot (i.e. 𝚝𝚢𝚙𝚎 = "𝚕") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+
+```{r, echo=TRUE, cache=TRUE}
+library(lattice)
+Weekday <- subset(fData, fData$DayType == 'Weekday')
+Weekend <- subset(fData, fData$DayType == 'Weekend')
+
+Weekday.Mean <- data.frame(Steps=unname(tapply(Weekday$Steps, Weekday$Interval, mean)), Interval=unique(Weekday$Interval), Week=rep('Weekday', length(unique(Weekday$Interval))))
+
+Weekend.Mean <- data.frame(Steps=unname(tapply(Weekend$Steps, Weekend$Interval, mean)), Interval=unique(Weekend$Interval), Week=rep('Weekend', length(unique(Weekend$Interval))))
+
+xyplot(Steps~Interval|Week, data=rbind(Weekday.Mean, Weekend.Mean), layout=(c(1,2)), type='l', xlab='Interval', ylab='Number of Steps')
+```
+
